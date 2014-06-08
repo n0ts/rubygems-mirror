@@ -5,6 +5,8 @@ class Gem::Mirror
   autoload :Fetcher, 'rubygems/mirror/fetcher'
   autoload :Pool, 'rubygems/mirror/pool'
 
+  VERSION = '1.0.1'
+
   SPECS_FILE = "specs.#{Gem.marshal_version}"
   SPECS_FILE_Z = "specs.#{Gem.marshal_version}.gz"
 
@@ -13,10 +15,10 @@ class Gem::Mirror
 
   RUBY = 'ruby'
 
-  def initialize(from = DEFAULT_URI, to = DEFAULT_TO, parallelism = 10)
+  def initialize(from = DEFAULT_URI, to = DEFAULT_TO, parallelism = nil)
     @from, @to = from, to
     @fetcher = Fetcher.new
-    @pool = Pool.new(parallelism)
+    @pool = Pool.new(parallelism || 10)
   end
 
   def from(*args)
@@ -30,13 +32,13 @@ class Gem::Mirror
   def update_specs
     specz = to(SPECS_FILE_Z)
     @fetcher.fetch(from(SPECS_FILE_Z), specz)
-    open(to(SPECS_FILE), 'wb') { |f| f << Gem.gunzip(File.read(specz)) }
+    open(to(SPECS_FILE), 'wb') { |f| f << Gem.gunzip(Gem.read_binary(specz)) }
   end
 
   def gems
     update_specs unless File.exists?(to(SPECS_FILE))
 
-    gems = Marshal.load(File.read(to(SPECS_FILE)))
+    gems = Marshal.load(Gem.read_binary(to(SPECS_FILE)))
     gems.map! do |name, ver, plat|
       # If the platform is ruby, it is not in the gem name
       "#{name}-#{ver}#{"-#{plat}" unless plat == RUBY}.gem"
@@ -60,7 +62,7 @@ class Gem::Mirror
     gems_to_fetch.each do |g|
       @pool.job do
         @fetcher.fetch(from('gems', g), to('gems', g))
-        yield
+        yield if block_given?
       end
     end
 
@@ -71,7 +73,7 @@ class Gem::Mirror
     gems_to_delete.each do |g|
       @pool.job do
         File.delete(to('gems', g))
-        yield
+        yield if block_given?
       end
     end
 
